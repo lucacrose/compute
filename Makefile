@@ -1,7 +1,7 @@
 all: gen
 
 gen: gen.cpp
-	g++ gen.cpp -o gen
+	g++ gen.cpp -o gen -std=c++23
 
 run: gen
 	./gen
