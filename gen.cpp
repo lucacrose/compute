@@ -4,17 +4,20 @@
 #include <iomanip>
 #include <print>
 
-std::vector<int> item_value(std::mt19937& gen, size_t count) {
+constexpr size_t items_count = 10;
+constexpr size_t time_steps = 32;
+
+std::array<int, time_steps> item_value(std::mt19937& gen) {
     std::uniform_real_distribution<double> pdist(2.0, 7.0);
     std::uniform_real_distribution<double> vdist(-0.05, 0.05);
 
-    std::vector<int> value;
+    std::array<int, time_steps> value;
 
     double p = exp10(pdist(gen));
     double v = vdist(gen) * p;
 
-    for (size_t i = 0; i < count; i++) {
-        value.push_back(p);
+    for (size_t i = 0; i < time_steps; i++) {
+        value[i] = std::round(p);
 
         p += v;
         v = vdist(gen) * p;
@@ -34,10 +37,10 @@ int main() {
 
     std::cout << std::setprecision(15);
 
-    std::vector<std::vector<int>> item_values;
+    std::vector<std::array<int, time_steps>> item_values;
 
-    for (size_t i = 0; i < 10; i++) {
-        item_values.push_back(item_value(gen, 32));
+    for (size_t i = 0; i < items_count; i++) {
+        item_values.push_back(item_value(gen));
     }
 
     std::print("{}\n", item_values);
