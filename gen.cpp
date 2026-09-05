@@ -10,28 +10,25 @@ constexpr size_t time_steps = 2048;
 
 std::array<int, time_steps> item_value(std::mt19937& gen) {
     std::uniform_real_distribution<double> value_dist(2.0, 7.0);
-    std::uniform_real_distribution<double> velocity_dist(-0.05, 0.05);
-    std::uniform_real_distribution<double> anchor_dist(0.5, 2.0);
+    std::normal_distribution<double> velocity_dist(0, 0.0005);
+    std::normal_distribution<double> value_shock(0, 0.01);
+    std::normal_distribution<double> anchor_drift(0, 0.005);
 
     std::array<int, time_steps> series;
 
-    double value = exp10(value_dist(gen));
-    double velocity = velocity_dist(gen) * value;
-    double anchor = value * anchor_dist(gen);
+    double log_value = std::log(exp10(value_dist(gen)));
+    double log_anchor = log_value;
+    double velocity = 0;
 
     for (size_t i = 0; i < time_steps; ++i) {
-        value += velocity;
-        
-        double reversion = (anchor - value) / 500;
+        log_anchor += anchor_drift(gen);
 
-        value += reversion * reversion * (1 + -2 * std::signbit(reversion));
+        velocity = velocity * 0.8 + velocity_dist(gen) + (log_anchor - log_value) / 100;
 
-        series[i] = std::round(value);
+        log_value += velocity + value_shock(gen);
 
-        velocity = velocity_dist(gen) * value;
+        series[i] = std::round(std::exp(log_value));
     }
-
-    std::cout << "Anchor Value: " << anchor << std::endl;
 
     return series;
 }
