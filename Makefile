@@ -8,3 +8,4 @@ run: gen
 
 clean:
 	rm -f gen
+	rm -f out.csv
