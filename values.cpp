@@ -242,8 +242,6 @@ std::vector<ItemResult<TimeSteps>> generate_values(size_t items_count) {
     std::random_device rd;
     std::mt19937 gen(rd());
 
-    std::cout << std::setprecision(15);
-
     // 1. Full market dynamic, shared by everything below.            O(T)
     auto market_returns = generate_market_path<TimeSteps>(gen);
 
