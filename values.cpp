@@ -80,6 +80,8 @@ namespace params {
     constexpr double student_t_dof = 5.0; // fat tails, matching empirical excess kurtosis of real returns
 }
 
+namespace backtester {
+
 constexpr std::array<const char*, params::category_count> category_names = {
     "Consumer Staples", "Cyclical", "Technology", "Energy", "Financials", "Healthcare"
 };
@@ -102,9 +104,8 @@ inline double standardized_t_shock(std::mt19937& gen) {
 // Market-wide log-return path: one OU-driven drift + one GARCH(1,1) vol process
 // shared by every category and every item. O(time_steps).
 // ---------------------------------------------------------------------------
-template <size_t TimeSteps>
-std::array<double, TimeSteps> generate_market_path(std::mt19937& gen) {
-    std::array<double, TimeSteps> returns{};
+std::vector<double> generate_market_path(std::size_t time_steps, std::mt19937& gen) {
+    std::vector<double> returns(time_steps);
 
     std::normal_distribution<double> drift_noise(0.0, params::market_drift_sigma);
 
@@ -113,7 +114,7 @@ std::array<double, TimeSteps> generate_market_path(std::mt19937& gen) {
                        (1.0 - params::market_garch_alpha - params::market_garch_beta);
     double prev_shock = 0.0;
 
-    for (size_t t = 0; t < TimeSteps; ++t) {
+    for (size_t t = 0; t < time_steps; ++t) {
         // Ornstein-Uhlenbeck: dx = theta*(mu - x) + sigma*dW  (slow macro/business-cycle drift)
         drift += params::market_drift_theta * (params::market_drift_mu - drift) + drift_noise(gen);
 
@@ -134,16 +135,17 @@ std::array<double, TimeSteps> generate_market_path(std::mt19937& gen) {
 // rotation") and GARCH(1,1) vol, loaded onto the market via a CAPM-style beta.
 // O(category_count * time_steps).
 // ---------------------------------------------------------------------------
-template <size_t TimeSteps>
-std::vector<std::array<double, TimeSteps>> generate_category_paths(
+std::vector<std::vector<double>> generate_category_paths(
+    std::size_t time_steps,
     std::mt19937& gen,
-    const std::array<double, TimeSteps>& market_returns,
+    const std::vector<double>& market_returns,
     std::vector<double>& betas_out)
 {
     std::uniform_real_distribution<double> beta_dist(params::category_beta_min, params::category_beta_max);
     std::normal_distribution<double> drift_noise(0.0, params::category_drift_sigma);
 
-    std::vector<std::array<double, TimeSteps>> category_returns(params::category_count);
+    std::vector<std::vector<double>> category_returns(params::category_count,
+                                                      std::vector<double>(time_steps));
     betas_out.resize(params::category_count);
 
     for (size_t c = 0; c < params::category_count; ++c) {
@@ -155,7 +157,7 @@ std::vector<std::array<double, TimeSteps>> generate_category_paths(
                            (1.0 - params::category_garch_alpha - params::category_garch_beta);
         double prev_shock = 0.0;
 
-        for (size_t t = 0; t < TimeSteps; ++t) {
+        for (size_t t = 0; t < time_steps; ++t) {
             drift += params::category_drift_theta * (0.0 - drift) + drift_noise(gen);
 
             variance = garch_update_variance(params::category_garch_omega, params::category_garch_alpha,
@@ -178,12 +180,11 @@ std::vector<std::array<double, TimeSteps>> generate_category_paths(
 // Uses only the precomputed market/category paths, so this is O(time_steps)
 // per item -> O(items_count * time_steps) overall.
 // ---------------------------------------------------------------------------
-template <size_t TimeSteps>
-ItemResult<TimeSteps> generate_item_series(
+ItemResult generate_item_series(
     std::mt19937& gen,
     size_t category,
-    const std::array<double, TimeSteps>& market_returns,
-    const std::array<double, TimeSteps>& category_returns)
+    const std::vector<double>& market_returns,
+    const std::vector<double>& category_returns)
 {
     std::uniform_real_distribution<double> initial_price_pow(2.0, 7.0);
     std::normal_distribution<double> beta_market_dist(params::item_beta_market_mean, params::item_beta_market_sd);
@@ -205,10 +206,11 @@ ItemResult<TimeSteps> generate_item_series(
                        (1.0 - params::item_garch_alpha - params::item_garch_beta);
     double prev_shock = 0.0;
 
-    ItemResult<TimeSteps> result;
+    ItemResult result;
+    result.prices.resize(market_returns.size());
     result.category = category;
 
-    for (size_t t = 0; t < TimeSteps; ++t) {
+    for (size_t t = 0; t < market_returns.size(); ++t) {
         double deviation = log_price - log_fundamental; // current mispricing vs. fair value
 
         double fundamental_growth = company_growth + fundamental_shock(gen);
@@ -237,22 +239,18 @@ ItemResult<TimeSteps> generate_item_series(
     return result;
 }
 
-template <size_t TimeSteps>
-std::vector<ItemResult<TimeSteps>> generate_values(size_t items_count) {
-    std::random_device rd;
-    std::mt19937 gen(rd());
-
+std::vector<ItemResult> generate_values(std::size_t items_count, std::size_t time_steps, std::mt19937& gen) {
     // 1. Full market dynamic, shared by everything below.            O(T)
-    auto market_returns = generate_market_path<TimeSteps>(gen);
+    auto market_returns = generate_market_path(time_steps, gen);
 
     // 2. Category ("sector") dynamics, shared by items in that category. O(category_count * T)
     std::vector<double> category_betas;
-    auto category_returns = generate_category_paths<TimeSteps>(gen, market_returns, category_betas);
+    auto category_returns = generate_category_paths(time_steps, gen, market_returns, category_betas);
 
     // 3. Assign each item a category with equal probability, then simulate it. O(items_count * T)
     std::uniform_int_distribution<size_t> category_assignment(0, params::category_count - 1);
 
-    std::vector<ItemResult<TimeSteps>> items;
+    std::vector<ItemResult> items;
     items.reserve(items_count);
     for (size_t i = 0; i < items_count; ++i) {
         size_t category = category_assignment(gen);
@@ -260,4 +258,6 @@ std::vector<ItemResult<TimeSteps>> generate_values(size_t items_count) {
     }
 
     return items;
+}
+
 }

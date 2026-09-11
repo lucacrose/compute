@@ -1,10 +1,17 @@
 #pragma once
 
-template <size_t TimeSteps>
+#include <vector>
+#include <cstddef>
+#include <random>
+#include <cstdint>
+
+namespace backtester {
+
 struct ItemResult {
-    std::array<int, TimeSteps> prices;
-    size_t category;
+    std::vector<std::uint32_t> prices;
+    std::size_t category;
 };
 
-template <size_t TimeSteps>
-std::vector<ItemResult<TimeSteps>> generate_values(size_t items_count);
+[[nodiscard]] std::vector<ItemResult> generate_values(std::size_t items_count, std::size_t time_steps, std::mt19937& gen);
+
+}
