@@ -1,4 +1,4 @@
-// market_simulation.cpp
+// gen.cpp
 //
 // Simulates item prices as a three-level factor model, the same structure
 // used in real equity-market models (APT / Fama-French style):
@@ -29,9 +29,7 @@
 #include <iostream>
 #include <random>
 #include <vector>
-
-constexpr size_t items_count = 100;   // tune freely; should be >> category_count
-constexpr size_t time_steps  = 2048;
+#include "values.hpp"
 
 namespace params {
     // ---------------- Market: the single systemic / macro factor ----------------
@@ -104,8 +102,9 @@ inline double standardized_t_shock(std::mt19937& gen) {
 // Market-wide log-return path: one OU-driven drift + one GARCH(1,1) vol process
 // shared by every category and every item. O(time_steps).
 // ---------------------------------------------------------------------------
-std::array<double, time_steps> generate_market_path(std::mt19937& gen) {
-    std::array<double, time_steps> returns{};
+template <size_t TimeSteps>
+std::array<double, TimeSteps> generate_market_path(std::mt19937& gen) {
+    std::array<double, TimeSteps> returns{};
 
     std::normal_distribution<double> drift_noise(0.0, params::market_drift_sigma);
 
@@ -114,7 +113,7 @@ std::array<double, time_steps> generate_market_path(std::mt19937& gen) {
                        (1.0 - params::market_garch_alpha - params::market_garch_beta);
     double prev_shock = 0.0;
 
-    for (size_t t = 0; t < time_steps; ++t) {
+    for (size_t t = 0; t < TimeSteps; ++t) {
         // Ornstein-Uhlenbeck: dx = theta*(mu - x) + sigma*dW  (slow macro/business-cycle drift)
         drift += params::market_drift_theta * (params::market_drift_mu - drift) + drift_noise(gen);
 
@@ -135,15 +134,16 @@ std::array<double, time_steps> generate_market_path(std::mt19937& gen) {
 // rotation") and GARCH(1,1) vol, loaded onto the market via a CAPM-style beta.
 // O(category_count * time_steps).
 // ---------------------------------------------------------------------------
-std::vector<std::array<double, time_steps>> generate_category_paths(
+template <size_t TimeSteps>
+std::vector<std::array<double, TimeSteps>> generate_category_paths(
     std::mt19937& gen,
-    const std::array<double, time_steps>& market_returns,
+    const std::array<double, TimeSteps>& market_returns,
     std::vector<double>& betas_out)
 {
     std::uniform_real_distribution<double> beta_dist(params::category_beta_min, params::category_beta_max);
     std::normal_distribution<double> drift_noise(0.0, params::category_drift_sigma);
 
-    std::vector<std::array<double, time_steps>> category_returns(params::category_count);
+    std::vector<std::array<double, TimeSteps>> category_returns(params::category_count);
     betas_out.resize(params::category_count);
 
     for (size_t c = 0; c < params::category_count; ++c) {
@@ -155,7 +155,7 @@ std::vector<std::array<double, time_steps>> generate_category_paths(
                            (1.0 - params::category_garch_alpha - params::category_garch_beta);
         double prev_shock = 0.0;
 
-        for (size_t t = 0; t < time_steps; ++t) {
+        for (size_t t = 0; t < TimeSteps; ++t) {
             drift += params::category_drift_theta * (0.0 - drift) + drift_noise(gen);
 
             variance = garch_update_variance(params::category_garch_omega, params::category_garch_alpha,
@@ -172,22 +172,18 @@ std::vector<std::array<double, time_steps>> generate_category_paths(
     return category_returns;
 }
 
-struct ItemResult {
-    std::array<int, time_steps> prices;
-    size_t category;
-};
-
 // ---------------------------------------------------------------------------
 // One item's price path: multi-factor return (market + category + idiosyncratic)
 // plus mean reversion of price toward a slowly-drifting "fundamental value".
 // Uses only the precomputed market/category paths, so this is O(time_steps)
 // per item -> O(items_count * time_steps) overall.
 // ---------------------------------------------------------------------------
-ItemResult generate_item_series(
+template <size_t TimeSteps>
+ItemResult<TimeSteps> generate_item_series(
     std::mt19937& gen,
     size_t category,
-    const std::array<double, time_steps>& market_returns,
-    const std::array<double, time_steps>& category_returns)
+    const std::array<double, TimeSteps>& market_returns,
+    const std::array<double, TimeSteps>& category_returns)
 {
     std::uniform_real_distribution<double> initial_price_pow(2.0, 7.0);
     std::normal_distribution<double> beta_market_dist(params::item_beta_market_mean, params::item_beta_market_sd);
@@ -209,10 +205,10 @@ ItemResult generate_item_series(
                        (1.0 - params::item_garch_alpha - params::item_garch_beta);
     double prev_shock = 0.0;
 
-    ItemResult result;
+    ItemResult<TimeSteps> result;
     result.category = category;
 
-    for (size_t t = 0; t < time_steps; ++t) {
+    for (size_t t = 0; t < TimeSteps; ++t) {
         double deviation = log_price - log_fundamental; // current mispricing vs. fair value
 
         double fundamental_growth = company_growth + fundamental_shock(gen);
@@ -241,41 +237,29 @@ ItemResult generate_item_series(
     return result;
 }
 
-int main() {
+template <size_t TimeSteps>
+std::vector<ItemResult<TimeSteps>> generate_values(size_t items_count) {
     std::random_device rd;
     std::mt19937 gen(rd());
 
     std::cout << std::setprecision(15);
 
     // 1. Full market dynamic, shared by everything below.            O(T)
-    auto market_returns = generate_market_path(gen);
+    auto market_returns = generate_market_path<TimeSteps>(gen);
 
     // 2. Category ("sector") dynamics, shared by items in that category. O(category_count * T)
     std::vector<double> category_betas;
-    auto category_returns = generate_category_paths(gen, market_returns, category_betas);
+    auto category_returns = generate_category_paths<TimeSteps>(gen, market_returns, category_betas);
 
     // 3. Assign each item a category with equal probability, then simulate it. O(items_count * T)
     std::uniform_int_distribution<size_t> category_assignment(0, params::category_count - 1);
 
-    std::vector<ItemResult> items;
+    std::vector<ItemResult<TimeSteps>> items;
     items.reserve(items_count);
     for (size_t i = 0; i < items_count; ++i) {
         size_t category = category_assignment(gen);
         items.push_back(generate_item_series(gen, category, market_returns, category_returns[category]));
     }
 
-    std::ofstream output_file("out.csv");
-    output_file << "item,category_id,category_name,step,value\n";
-    for (size_t i = 0; i < items_count; ++i) {
-        size_t c = items[i].category;
-        for (size_t t = 0; t < time_steps; ++t) {
-            output_file << i << "," << c << "," << category_names[c] << "," << t << "," << items[i].prices[t] << "\n";
-        }
-    }
-    output_file.close();
-
-    std::cout << "Wrote " << items_count << " items x " << time_steps
-              << " steps across " << params::category_count << " categories to out.csv\n";
-
-    return 0;
+    return items;
 }
