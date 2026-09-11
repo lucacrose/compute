@@ -21,7 +21,7 @@ int main(int argc, char* argv[]) {
 
     std::vector<backtester::ItemResult> item_values = backtester::generate_values(items_count, time_steps, gen);
 
-    std::vector<backtester::Basket> baskets = backtester::generate_baskets(baskets_count, gen);
+    std::vector<backtester::Basket> baskets = backtester::generate_baskets(baskets_count, item_values, gen);
 
     return 0;
 }
