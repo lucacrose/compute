@@ -1,15 +1,21 @@
 #pragma once
 
-#include <vector>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 
 namespace backtester {
 
+constexpr std::size_t maxBasketItems = 4;
+
 struct Basket {
-    std::vector<std::size_t> items_given;
-    std::vector<std::size_t> items_received;
-    std::uint64_t net_currency_received;
+    std::array<std::size_t, maxBasketItems> items_given;
+    std::array<std::size_t, maxBasketItems> items_received;
+    
+    std::int64_t net_currency_received = 0;
+
+    std::uint8_t items_given_count = 0;
+    std::uint8_t items_received_count = 0;
 };
 
 [[nodiscard]] std::vector<Basket> generate_baskets(std::size_t count); 
