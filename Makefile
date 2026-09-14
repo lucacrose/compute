@@ -1,4 +1,4 @@
-RUN_ARGS = 4 32 8
+RUN_ARGS = 4 32 8 1024
 
 all: gen
 
