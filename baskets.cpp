@@ -25,6 +25,8 @@ std::vector<Basket> generate_baskets(std::size_t count, std::vector<ItemResult> 
     std::uniform_int_distribution<std::size_t> random_time_step_dist(0, time_steps - 1);
     std::normal_distribution<float> value_ratio_dist(0.05f, 0.005f);
 
+    std::vector<std::size_t> item_last_attempt_used(items.size());
+
     for (std::size_t i = 0; i < count; ++i) {
         Basket basket{};
 
@@ -37,24 +39,46 @@ std::vector<Basket> generate_baskets(std::size_t count, std::vector<ItemResult> 
         std::size_t basket_time_step_index = random_time_step_dist(gen);
         float log_target_value_ratio = std::abs(value_ratio_dist(gen));
 
-        std::uint16_t attempts = 0;
+        std::uint16_t attempts = 1;
 
-        while (attempts < max_attempts) {
+        while (attempts < max_attempts + 1) {
             std::uint64_t given_value = 0;
             std::uint64_t received_value = 0;
+
+            std::size_t attempt_index = attempts * 2;
 
             items_given_count = random_size_dist(gen);
             items_received_count = random_size_dist(gen);
 
             for (std::size_t j = 0; j < items_given_count; ++j) {
-                std::size_t item_index = random_item_dist(gen);
+                std::size_t item_index;
+
+                while (true) {
+                    item_index = random_item_dist(gen);
+
+                    if (item_last_attempt_used[item_index] / 2 != attempt_index) {
+                        break;
+                    }
+                }
+
                 items_given[j] = item_index;
+                item_last_attempt_used[item_index] = attempts * 2;
                 given_value += items[item_index].prices[basket_time_step_index];
             }
 
             for (std::size_t j = 0; j < items_received_count; ++j) {
-                std::size_t item_index = random_item_dist(gen);
+                std::size_t item_index;
+
+                while (1) {
+                    item_index = random_item_dist(gen);
+    
+                    if (item_last_attempt_used[item_index] / 2 != attempt_index) {
+                        break;
+                    }
+                }
+
                 items_received[j] = item_index;
+                item_last_attempt_used[item_index] = attempts * 2 + 1;
                 received_value += items[item_index].prices[basket_time_step_index];
             }
 
@@ -68,17 +92,32 @@ std::vector<Basket> generate_baskets(std::size_t count, std::vector<ItemResult> 
             ++attempts;
         }
 
+        if (attempts == max_attempts + 1) {
+            --i;
+            continue;
+        }
+
         basket.items_given = items_given;
         basket.items_received = items_received;
 
         basket.items_given_count = items_given_count;
         basket.items_received_count = items_received_count;
 
-        if (attempts == max_attempts) {
-            --i;
+        std::cout << "Basket " << i << ":\n->Given: ";
+
+        for (std::size_t j = 0; j < items_given_count; ++j) {
+            std::cout << items_given[j] << " (" << items[items_given[j]].prices[basket_time_step_index] << "), ";
+        }
+
+        std::cout << "\n->Received: ";
+
+        for (std::size_t j = 0; j < items_received_count; ++j) {
+            std::cout << items_received[j] << " (" << items[items_received[j]].prices[basket_time_step_index] << "), " << std::endl;
         }
 
         baskets.emplace_back(basket);
+
+        std::fill(item_last_attempt_used.begin(), item_last_attempt_used.end(), 0);
     }
 
     return baskets;
