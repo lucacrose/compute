@@ -22,6 +22,6 @@ struct Basket {
 };
 
 [[nodiscard]]
-std::vector<Basket> generate_baskets(std::size_t count, std::vector<ItemResult> items, std::uint16_t max_attempts, std::mt19937& gen); 
+std::vector<Basket> generate_baskets(std::size_t count, const std::vector<ItemResult>& items, std::uint16_t max_attempts, std::mt19937& gen); 
 
 }
